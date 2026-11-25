@@ -97,6 +97,36 @@ a.lnk:active{transform:scale(.985)}
   var SHELL_OPEN = '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>html,body{margin:0}</style></head><body>';
   var PASS_HASH = 18573125901706;
   var SALT = 'gb|';
+  var REPO = 'yusupovumarjon34-coder/godbless';
+  function getTok() { try { return localStorage.getItem('gb-gh') || ''; } catch (e) { return ''; } }
+  function pushLinks(next) {
+    var tok = getTok();
+    if (!tok) return Promise.reject({ code: 'no_token' });
+    var url = 'https://api.github.com/repos/' + REPO + '/contents/links.json';
+    var hd = { 'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json' };
+    return fetch(url + '?ref=main', { headers: hd, cache: 'no-store' }).then(function (r) {
+      if (r.status === 401 || r.status === 403) throw { code: 'bad_token' };
+      return r.status === 200 ? r.json().then(function (j) { return j.sha; }) : null;
+    }).then(function (sha) {
+      var body = { message: 'Обновление ссылок', branch: 'main', content: btoa(unescape(encodeURIComponent(JSON.stringify({ links: next.links }, null, 1)))) };
+      if (sha) body.sha = sha;
+      return fetch(url, { method: 'PUT', headers: hd, body: JSON.stringify(body) }).then(function (r) {
+        if (r.status === 401 || r.status === 403 || r.status === 404) throw { code: 'bad_token' };
+        if (!r.ok) throw { code: 'http' };
+      });
+    });
+  }
+  function loadRemote() {
+    if (!window.fetch) return;
+    fetch('links.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || !Array.isArray(j.links)) return;
+      if (JSON.stringify(j.links) === JSON.stringify(state.links)) return;
+      var wasDirty = dirty();
+      state.links = j.links;
+      if (!wasDirty) draft = JSON.parse(JSON.stringify(state));
+      render();
+    }).catch(function () {});
+  }
 
   var ICONS = {
     bot: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 13h.01M15 13h.01M2 14v2M22 14v2"/></svg>',
@@ -234,8 +264,8 @@ a.lnk:active{transform:scale(.985)}
     var d = dirty();
     barBtn.disabled = !d || ui.saving;
     if (ui.status) { barSt.textContent = ui.status; barSt.className = 'st ' + ui.statusKind; }
-    else if (d) { barSt.textContent = 'Есть изменения. Нажмите «Скачать сайт» и загрузите файл на GitHub.'; barSt.className = 'st warn'; }
-    else { barSt.textContent = 'Все изменения сохранены в файле.'; barSt.className = 'st'; }
+    else if (d) { barSt.textContent = 'Есть изменения. Нажмите «Сохранить на сайт».'; barSt.className = 'st warn'; }
+    else { barSt.textContent = 'Все изменения сохранены.'; barSt.className = 'st'; }
   }
   function setStatus(text, kind) { ui.status = text; ui.statusKind = kind || ''; updateBar(); }
   function touch() { ui.status = ''; ui.statusKind = ''; updateBar(); }
@@ -291,31 +321,26 @@ a.lnk:active{transform:scale(.985)}
       Array.prototype.forEach.call(listEl.querySelectorAll('.row'), function (row, i) { if (normUrl(draft.links[i].url) === null) row.querySelector('.field.sm').classList.add('bad'); });
       return;
     }
-    ui.saving = true; setStatus('Готовлю файл…', '');
+    ui.saving = true; setStatus('Сохраняю…', '');
     var next = JSON.parse(JSON.stringify(draft));
     next.updatedAt = new Date().toISOString();
-    Promise.resolve().then(function () {
-      var blob = new Blob([buildDoc(next)], { type: 'text/html' });
-      var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'index.html';
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
-    }).then(function () {
+    pushLinks(next).then(function () {
       state = next; draft = JSON.parse(JSON.stringify(next)); ui.saving = false;
-      setStatus('Файл index.html скачан. Загрузите его в репозиторий GitHub вместо старого, и сайт обновится.', 'ok');
+      setStatus('Сохранено. На сайте изменения появятся через 1–2 минуты.', 'ok');
       renderList();
     }).catch(function (e) {
       ui.saving = false;
       var code = e && e.code;
-      var text = 'Не удалось подготовить файл. Попробуйте ещё раз.';
-      if (code === 'not_granted' || code === 'not_writer' || code === 'unavailable') text = 'Не удалось скачать файл.';
-      else if (code === 'conflict') text = 'Страницу уже обновили. Откройте её заново и повторите правку.';
+      var text = 'Не удалось сохранить. Проверьте интернет и попробуйте ещё раз.';
+      if (code === 'no_token') text = 'Сначала подключите GitHub: вставьте ключ в блоке «Подключение» внизу.';
+      else if (code === 'bad_token') text = 'GitHub не принял ключ. Проверьте ключ и доступ к репозиторию.';
       setStatus(text, 'err');
     });
   }
 
   function renderAdmin() {
     if (!ui.unlocked) { renderGate(); return; }
-    barBtn = h('button', { class: 'main', type: 'button', text: 'Скачать сайт', onclick: save });
+    barBtn = h('button', { class: 'main', type: 'button', text: 'Сохранить на сайт', onclick: save });
     barSt = h('div', { class: 'st', role: 'status' });
     listEl = h('div', { class: 'list' });
 
@@ -355,10 +380,22 @@ a.lnk:active{transform:scale(.985)}
       h('button', { class: 'main wide', type: 'submit', html: PLUS + '<span>Добавить кнопку</span>' })
     ]);
 
+    var tokIn = h('input', { class: 'field', type: 'password', autocomplete: 'off', placeholder: 'github_pat_…', 'aria-label': 'Ключ GitHub' });
+    var tokSt = h('div', { class: 'note' });
+    function tokDraw() { tokSt.textContent = getTok() ? 'Ключ сохранён на этом устройстве.' : 'Ключ не подключён: сохранение на сайт не будет работать.'; }
+    var tokCard = h('section', { class: 'card', style: 'margin-top:20px;display:flex;flex-direction:column;gap:14px' }, [
+      h('h2', { class: 'h2', text: 'Подключение' }),
+      h('p', { class: 'sub', style: 'margin:0', text: 'Один раз вставьте ключ GitHub. Он хранится только на этом устройстве и нужен, чтобы изменения попадали на сайт.' }),
+      tokIn,
+      h('button', { class: 'main wide', type: 'button', text: 'Сохранить ключ', onclick: function () { var v = tokIn.value.trim(); if (!v) return; try { localStorage.setItem('gb-gh', v); } catch (e) {} tokIn.value = ''; tokDraw(); } }),
+      h('button', { class: 'ghost', type: 'button', text: 'Удалить ключ', onclick: function () { try { localStorage.removeItem('gb-gh'); } catch (e) {} tokDraw(); } }),
+      tokSt
+    ]);
+    tokDraw();
     var leftCard = h('section', { class: 'card l' }, [
       h('h2', { class: 'h2', text: 'На сайте' }),
       listEl,
-      h('p', { class: 'note', text: 'Выключатель скрывает кнопку, не удаляя её. Чтобы правки попали на сайт, скачайте файл и замените index.html в репозитории GitHub.' })
+      h('p', { class: 'note', text: 'Выключатель скрывает кнопку, не удаляя её. Правки попадут на сайт через 1–2 минуты после нажатия «Сохранить на сайт».' })
     ]);
 
     root.replaceChildren(
@@ -372,15 +409,16 @@ a.lnk:active{transform:scale(.985)}
           ])
         ]),
         h('h1', { class: 'h1', text: 'Кнопки сайта' }),
-        h('p', { class: 'sub', text: 'Меняйте ссылки, порядок и видимость кнопок. Готовый файл index.html загружается в GitHub, после этого сайт обновляется у всех.' }),
+        h('p', { class: 'sub', text: 'Меняйте ссылки, порядок и видимость кнопок. После сохранения сайт обновляется у всех посетителей.' }),
         h('div', { class: 'bar' }, [barSt, barBtn]),
-        h('div', { class: 'cols' }, [leftCard, form])
+        h('div', { class: 'cols' }, [leftCard, form]),
+        tokCard
       ]),
       h('p', { class: 'foot', text: '© 2026 God Bless. Все права защищены.' })
     );
     drawPick(); drawPv(); renderList(); updateBar();
     var v0 = draft.links.filter(function (l) { return !normUrl(l.url); }).length;
-    if (v0 && !ui.status && !dirty()) setStatus('Не заданы ссылки у кнопок: ' + v0 + '. Заполните их и нажмите «Скачать сайт».', 'warn');
+    if (v0 && !ui.status && !dirty()) setStatus('Не заданы ссылки у кнопок: ' + v0 + '. Заполните их и нажмите «Сохранить на сайт».', 'warn');
   }
 
   /* ---------- self-publish ---------- */
@@ -398,6 +436,7 @@ a.lnk:active{transform:scale(.985)}
   }
   window.addEventListener('hashchange', function () { render(); });
   render();
+  loadRemote();
 })();
 </script>
 </body></html>

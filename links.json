@@ -1,0 +1,25 @@
+{
+ "links": [
+  {
+   "id": "l1",
+   "title": "Актуальный бот",
+   "url": "https://t.me/GB_MAGNIT_V_GORODE_BOT",
+   "icon": "bot",
+   "visible": true
+  },
+  {
+   "id": "l2",
+   "title": "Обменник",
+   "url": "https://t.me/GB_MAGNIT_V_GORODE_BOT",
+   "icon": "exchange",
+   "visible": true
+  },
+  {
+   "id": "l3",
+   "title": "Оператор",
+   "url": "",
+   "icon": "operator",
+   "visible": true
+  }
+ ]
+}
